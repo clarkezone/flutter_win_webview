@@ -1,5 +1,5 @@
 
-name: webview_popupauth
+name: webviewpopupauth
 description: Displays popup window containing a webview for use in authentication scenarios.
 version: 0.0.1
 
