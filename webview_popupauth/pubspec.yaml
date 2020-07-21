@@ -1,0 +1,19 @@
+
+name: webview_popupauth
+description: Displays popup window containing a webview for use in authentication scenarios.
+version: 0.0.1
+
+publish_to: none
+
+flutter:
+  plugin:
+    platforms:
+      windows:
+        pluginClass: WebviewPopupAuth
+
+environment:
+  sdk: ">=2.1.0 <3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
