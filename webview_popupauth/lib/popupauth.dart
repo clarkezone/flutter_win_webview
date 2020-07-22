@@ -30,7 +30,7 @@ class PopupAuthChannelController {
     String url,
   ) async {
     final methodName = "WebviewPopupauth.Show.Open";
-    final token = await _channel.invokeMethod<String>(methodName);
+    final token = await _channel.invokeMethod<String>(methodName, url);
     return PopupAuthResult(token: token ?? [], canceled: token == null);
   }
 }
@@ -39,6 +39,6 @@ class PopupAuthChannelController {
 ///
 /// A number of configuration options are available:
 /// - [url] URL to point browser to.
-Future<PopupAuthResult> showOpenPanel(String url) async {
+Future<PopupAuthResult> showOpenPanel({String url}) async {
   return PopupAuthChannelController.instance.show(url);
 }

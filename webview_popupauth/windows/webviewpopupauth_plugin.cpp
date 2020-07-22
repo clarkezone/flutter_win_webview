@@ -70,11 +70,19 @@ void WebviewPopupauthPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue> &method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name().compare(kShowOpenAuthWindowMethod) == 0) {
-    if (!method_call.arguments() || !method_call.arguments()->IsMap()) {
+    if (!method_call.arguments() || !method_call.arguments()->IsString()) {
       result->Error("Bad Arguments", "Argument map missing or malformed");
       return;
     }
-    // show poup window here
+
+    auto url = method_call.arguments()->StringValue();
+    OutputDebugStringA(url.c_str());
+
+    // show poup window here 
+
+    EncodableValue response("FAKEHASH");
+
+    result->Success(&response);
   } else {
     result->NotImplemented();
   }
