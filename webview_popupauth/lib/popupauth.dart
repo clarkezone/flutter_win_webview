@@ -39,6 +39,6 @@ class PopupAuthChannelController {
 ///
 /// A number of configuration options are available:
 /// - [url] URL to point browser to.
-Future<PopupAuthResult> showOpenPanel({String url}) async {
+Future<PopupAuthResult> showOpenPanel(String url) async {
   return PopupAuthChannelController.instance.show(url);
 }
