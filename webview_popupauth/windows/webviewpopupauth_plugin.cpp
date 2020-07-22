@@ -1,4 +1,4 @@
-#include "include/webviewpopupauth/webviewpopupauth_plugin.h"
+#include "include/webviewpopupauth/webview_popupauth_plugin.h"
 
 #include <flutter/flutter_view.h>
 #include <flutter/method_channel.h>
