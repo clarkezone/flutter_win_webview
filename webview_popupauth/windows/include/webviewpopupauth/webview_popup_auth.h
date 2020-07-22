@@ -15,7 +15,7 @@
 extern "C" {
 #endif
 
-FLUTTER_PLUGIN_EXPORT void FileChooserPluginRegisterWithRegistrar(
+FLUTTER_PLUGIN_EXPORT void WebviewPopupAuthRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar);
 
 #if defined(__cplusplus)

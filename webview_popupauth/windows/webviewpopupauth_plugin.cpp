@@ -1,4 +1,4 @@
-#include "include/webviewpopupauth/webview_popupauth_plugin.h"
+#include "include/webviewpopupauth/webview_popup_auth.h"
 
 #include <flutter/flutter_view.h>
 #include <flutter/method_channel.h>
@@ -82,7 +82,7 @@ void WebviewPopupauthPlugin::HandleMethodCall(
 
 }  // namespace
 
-void WebviewPopupauthPluginRegisterWithRegistrar(
+void WebviewPopupAuthRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar) {
   WebviewPopupauthPlugin::RegisterWithRegistrar(
       flutter::PluginRegistrarManager::GetInstance()
