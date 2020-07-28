@@ -21,7 +21,7 @@ using flutter::EncodableMap;
 using flutter::EncodableValue;
 
 // See channel_controller.dart for documentation.
-const char kChannelName[] = "flutter/webviewpopupauth";
+const char kChannelName[] = "flutter_webview_plugin";
 const char kShowOpenAuthWindowMethod[] = "WebviewPopupauth.Show.Open";
 
 // Pointer to WebViewController
@@ -84,7 +84,7 @@ void WebviewPopupauthPlugin::HandleMethodCall(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
   OutputDebugStringA(method_call.method_name().c_str());
-  if (method_call.method_name().compare(kShowOpenAuthWindowMethod) == 0) {
+  if (method_call.method_name().compare("launch") == 0) {
     if (!method_call.arguments() || !method_call.arguments()->IsString()) {
       result->Error("Bad Arguments", "Argument map missing or malformed");
       return;
@@ -98,7 +98,12 @@ void WebviewPopupauthPlugin::HandleMethodCall(
     //EncodableValue response("FAKEHASH");
 
     //result->Success(&response);
-  } else {
+  }
+  else if(method_call.method_name().compare("close") == 0) {
+	  auto hwnd = registrar_->GetView()->GetNativeWindow();
+	  CloseWindow(hwnd);
+  }
+  else {
     result->NotImplemented();
   }
 }
