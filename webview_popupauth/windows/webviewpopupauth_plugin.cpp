@@ -50,6 +50,7 @@ class WebviewPopupauthPlugin : public flutter::Plugin {
   void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue> &method_call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  void WebviewInit(std::string url);
 
   // The registrar for this plugin, for accessing the window.
   flutter::PluginRegistrarWindows *registrar_;
@@ -88,18 +89,32 @@ void WebviewPopupauthPlugin::HandleMethodCall(
       result->Error("Bad Arguments", "Argument map missing or malformed");
       return;
     }
-    auto url = method_call.arguments()->StringValue();
+	auto url = method_call.arguments()->StringValue();
+	//std::wstring wstr(url.begin(), url.end());
     OutputDebugStringA(url.c_str());
 
-	auto hwnd = GetRootWindow(registrar_->GetView());
+	WebviewInit(url);
+
+    //EncodableValue response("FAKEHASH");
+
+    //result->Success(&response);
+  } else {
+    result->NotImplemented();
+  }
+}
+
+}  // namespace
+
+void WebviewPopupauthPlugin::WebviewInit(std::string url) {
+	auto hwnd = registrar_->GetView()->GetNativeWindow();
 
 	CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
 		Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-			[hwnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+			[hwnd, url](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
 
 				// Create a CoreWebView2Controller and get the associated CoreWebView2 whose parent is the main window hWnd
 				env->CreateCoreWebView2Controller(hwnd, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-					[hwnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+					[hwnd,url](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
 						if (controller != nullptr) {
 							webviewController = controller;
 							webviewController->get_CoreWebView2(&webviewWindow);
@@ -122,30 +137,15 @@ void WebviewPopupauthPlugin::HandleMethodCall(
 						bounds.bottom -= 50;
 						webviewController->put_Bounds(bounds);
 
-						// Schedule an async task to navigate to Bing
-						webviewWindow->Navigate(L"https://www.bing.com/");
+						std::wstring wstr(url.begin(), url.end());
+						webviewWindow->Navigate(wstr.c_str());
 
 						return S_OK;
 					}).Get());
 				return S_OK;
 			}).Get());
 
-	MSG msg;
-	while (GetMessage(&msg, NULL, 0, 0))
-	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
-
-    //EncodableValue response("FAKEHASH");
-
-    //result->Success(&response);
-  } else {
-    result->NotImplemented();
-  }
 }
-
-}  // namespace
 
 void WebviewPopupAuthRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar) {
