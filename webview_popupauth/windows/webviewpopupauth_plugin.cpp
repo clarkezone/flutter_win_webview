@@ -52,7 +52,7 @@ class WebviewPopupauthPlugin : public flutter::Plugin {
   void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue> &method_call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-  void WebviewInit(std::string url);
+  void WebviewInit(std::string url, bool hidden, bool clearCookies, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void OnUrlChanged(const std::string& newUri);
 
   // The registrar for this plugin, for accessing the window.
@@ -94,17 +94,20 @@ void WebviewPopupauthPlugin::HandleMethodCall(
       result->Error("Bad Arguments", "Argument map missing or malformed");
       return;
     }
-	auto url = method_call.arguments()->MapValue().at(flutter::EncodableValue("url")).StringValue();
-	//std::wstring wstr(url.begin(), url.end());
+	auto map = method_call.arguments()->MapValue();
+	auto url = map.at(flutter::EncodableValue("url")).StringValue();
+	auto hidden = map.at(flutter::EncodableValue("hidden")).BoolValue();
+	auto clearCookies = map.at(flutter::EncodableValue("clearCookies")).BoolValue();
+
     OutputDebugStringA(url.c_str());
 
-	WebviewInit(url);
-
-    result->Success(nullptr);
+	WebviewInit(url, hidden, clearCookies, std::move(result));
   }
   else if(method_call.method_name().compare("close") == 0) {
-	  auto hwnd = registrar_->GetView()->GetNativeWindow();
-	  CloseWindow(hwnd);
+	  webviewController->Close();
+	  webviewController = nullptr;
+	  webviewWindow = nullptr;
+	  result->Success(nullptr);
   }
   else {
     result->NotImplemented();
@@ -122,16 +125,16 @@ void WebviewPopupauthPlugin::OnUrlChanged(const std::string& newUri) {
 	channel->InvokeMethod("onUrlChanged", std::move(args));
 }
 
-void WebviewPopupauthPlugin::WebviewInit(std::string url) {
+void WebviewPopupauthPlugin::WebviewInit(std::string url, bool hidden, bool clearCookies, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 	auto hwnd = registrar_->GetView()->GetNativeWindow();
 
 	CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
 		Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-			[this, hwnd, url](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+			[this, hwnd, url, hidden, clearCookies, result = std::move(result)](HRESULT r, ICoreWebView2Environment* env) mutable -> HRESULT {
 
 				// Create a CoreWebView2Controller and get the associated CoreWebView2 whose parent is the main window hWnd
 				env->CreateCoreWebView2Controller(hwnd, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-					[this, hwnd, url](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+					[this, hwnd, url, hidden, clearCookies, result = std::move(result)](HRESULT r, ICoreWebView2Controller* controller) mutable -> HRESULT {
 						if (controller != nullptr) {
 							webviewController = controller;
 							webviewController->get_CoreWebView2(&webviewWindow);
@@ -169,8 +172,16 @@ void WebviewPopupauthPlugin::WebviewInit(std::string url) {
 						bounds.bottom -= 50;
 						webviewController->put_Bounds(bounds);
 
+						webviewController->put_IsVisible(!hidden);
+
+						if (clearCookies) {
+							webviewWindow->CallDevToolsProtocolMethod(L"Network.clearBrowserCookies", L"{}", nullptr);
+						}
+
 						std::wstring wstr(url.begin(), url.end());
 						webviewWindow->Navigate(wstr.c_str());
+
+						result->Success(nullptr);
 
 						return S_OK;
 					}).Get());
