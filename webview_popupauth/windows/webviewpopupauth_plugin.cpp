@@ -5,6 +5,7 @@
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
+#include <atlstr.h>
 
 #include <string>
 #include <vector>
@@ -30,6 +31,7 @@ static wil::com_ptr<ICoreWebView2Controller> webviewController;
 // Pointer to WebView window
 static wil::com_ptr<ICoreWebView2> webviewWindow;
 
+static EventRegistrationToken sourceChangedToken{};
 
 // Returns the top-level window that owns |view|.
 HWND GetRootWindow(flutter::FlutterView *view) {
@@ -51,22 +53,25 @@ class WebviewPopupauthPlugin : public flutter::Plugin {
       const flutter::MethodCall<flutter::EncodableValue> &method_call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void WebviewInit(std::string url);
+  void OnUrlChanged(const std::string& newUri);
 
   // The registrar for this plugin, for accessing the window.
   flutter::PluginRegistrarWindows *registrar_;
+
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel;
 };
 
 // static
 void WebviewPopupauthPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows *registrar) {
-  auto channel =
+  auto plugin = std::make_unique<WebviewPopupauthPlugin>(registrar);
+
+  plugin->channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           registrar->messenger(), kChannelName,
           &flutter::StandardMethodCodec::GetInstance());
 
-  auto plugin = std::make_unique<WebviewPopupauthPlugin>(registrar);
-
-  channel->SetMethodCallHandler(
+  plugin->channel->SetMethodCallHandler(
       [plugin_pointer = plugin.get()](const auto &call, auto result) {
         plugin_pointer->HandleMethodCall(call, std::move(result));
       });
@@ -95,9 +100,7 @@ void WebviewPopupauthPlugin::HandleMethodCall(
 
 	WebviewInit(url);
 
-    //EncodableValue response("FAKEHASH");
-
-    //result->Success(&response);
+    result->Success(nullptr);
   }
   else if(method_call.method_name().compare("close") == 0) {
 	  auto hwnd = registrar_->GetView()->GetNativeWindow();
@@ -110,16 +113,25 @@ void WebviewPopupauthPlugin::HandleMethodCall(
 
 }  // namespace
 
+void WebviewPopupauthPlugin::OnUrlChanged(const std::string& newUri) {
+
+	EncodableMap encodableMap = { { EncodableValue("url"), EncodableValue(newUri) } };
+
+	auto args = std::make_unique<EncodableValue>(encodableMap);
+
+	channel->InvokeMethod("onUrlChanged", std::move(args));
+}
+
 void WebviewPopupauthPlugin::WebviewInit(std::string url) {
 	auto hwnd = registrar_->GetView()->GetNativeWindow();
 
 	CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
 		Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-			[hwnd, url](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+			[this, hwnd, url](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
 
 				// Create a CoreWebView2Controller and get the associated CoreWebView2 whose parent is the main window hWnd
 				env->CreateCoreWebView2Controller(hwnd, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-					[hwnd,url](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+					[this, hwnd, url](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
 						if (controller != nullptr) {
 							webviewController = controller;
 							webviewController->get_CoreWebView2(&webviewWindow);
@@ -132,6 +144,21 @@ void WebviewPopupauthPlugin::WebviewInit(std::string url) {
 						Settings->put_IsScriptEnabled(TRUE);
 						Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
 						Settings->put_IsWebMessageEnabled(TRUE);
+						
+						webviewWindow->add_SourceChanged(
+							Callback<ICoreWebView2SourceChangedEventHandler>(
+								[this](ICoreWebView2* sender,
+									IUnknown* args) -> HRESULT
+								{
+									LPWSTR newUri{ nullptr };
+									webviewWindow->get_Source(&newUri);
+
+									std::string newUriString = CW2A(newUri);
+
+									OnUrlChanged(newUriString);
+
+									return S_OK;
+								}).Get(), &sourceChangedToken);
 
 						// Resize WebView to fit the bounds of the parent window
 						RECT bounds;
