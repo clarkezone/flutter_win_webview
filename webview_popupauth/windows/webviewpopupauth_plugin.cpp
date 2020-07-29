@@ -5,6 +5,7 @@
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
+#include <atlstr.h>
 
 #include <string>
 #include <vector>
@@ -21,7 +22,7 @@ using flutter::EncodableMap;
 using flutter::EncodableValue;
 
 // See channel_controller.dart for documentation.
-const char kChannelName[] = "flutter/webviewpopupauth";
+const char kChannelName[] = "flutter_webview_plugin";
 const char kShowOpenAuthWindowMethod[] = "WebviewPopupauth.Show.Open";
 
 // Pointer to WebViewController
@@ -30,6 +31,7 @@ static wil::com_ptr<ICoreWebView2Controller> webviewController;
 // Pointer to WebView window
 static wil::com_ptr<ICoreWebView2> webviewWindow;
 
+static EventRegistrationToken sourceChangedToken{};
 
 // Returns the top-level window that owns |view|.
 HWND GetRootWindow(flutter::FlutterView *view) {
@@ -50,22 +52,26 @@ class WebviewPopupauthPlugin : public flutter::Plugin {
   void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue> &method_call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  void WebviewInit(std::string url, bool hidden, bool clearCookies, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  void OnUrlChanged(const std::string& newUri);
 
   // The registrar for this plugin, for accessing the window.
   flutter::PluginRegistrarWindows *registrar_;
+
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel;
 };
 
 // static
 void WebviewPopupauthPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows *registrar) {
-  auto channel =
+  auto plugin = std::make_unique<WebviewPopupauthPlugin>(registrar);
+
+  plugin->channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           registrar->messenger(), kChannelName,
           &flutter::StandardMethodCodec::GetInstance());
 
-  auto plugin = std::make_unique<WebviewPopupauthPlugin>(registrar);
-
-  channel->SetMethodCallHandler(
+  plugin->channel->SetMethodCallHandler(
       [plugin_pointer = plugin.get()](const auto &call, auto result) {
         plugin_pointer->HandleMethodCall(call, std::move(result));
       });
@@ -83,23 +89,52 @@ void WebviewPopupauthPlugin::HandleMethodCall(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
   OutputDebugStringA(method_call.method_name().c_str());
-  if (method_call.method_name().compare(kShowOpenAuthWindowMethod) == 0) {
-    if (!method_call.arguments() || !method_call.arguments()->IsString()) {
+  if (method_call.method_name().compare("launch") == 0) {
+    if (!method_call.arguments() || !method_call.arguments()->IsMap() || method_call.arguments()->MapValue().empty()) {
       result->Error("Bad Arguments", "Argument map missing or malformed");
       return;
     }
-    auto url = method_call.arguments()->StringValue();
+	auto map = method_call.arguments()->MapValue();
+	auto url = map.at(flutter::EncodableValue("url")).StringValue();
+	auto hidden = map.at(flutter::EncodableValue("hidden")).BoolValue();
+	auto clearCookies = map.at(flutter::EncodableValue("clearCookies")).BoolValue();
+
     OutputDebugStringA(url.c_str());
 
-	auto hwnd = GetRootWindow(registrar_->GetView());
+	WebviewInit(url, hidden, clearCookies, std::move(result));
+  }
+  else if(method_call.method_name().compare("close") == 0) {
+	  webviewController->Close();
+	  webviewController = nullptr;
+	  webviewWindow = nullptr;
+	  result->Success(nullptr);
+  }
+  else {
+    result->NotImplemented();
+  }
+}
+
+}  // namespace
+
+void WebviewPopupauthPlugin::OnUrlChanged(const std::string& newUri) {
+
+	EncodableMap encodableMap = { { EncodableValue("url"), EncodableValue(newUri) } };
+
+	auto args = std::make_unique<EncodableValue>(encodableMap);
+
+	channel->InvokeMethod("onUrlChanged", std::move(args));
+}
+
+void WebviewPopupauthPlugin::WebviewInit(std::string url, bool hidden, bool clearCookies, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+	auto hwnd = registrar_->GetView()->GetNativeWindow();
 
 	CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
 		Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-			[hwnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+			[this, hwnd, url, hidden, clearCookies, result = std::move(result)](HRESULT r, ICoreWebView2Environment* env) mutable -> HRESULT {
 
 				// Create a CoreWebView2Controller and get the associated CoreWebView2 whose parent is the main window hWnd
 				env->CreateCoreWebView2Controller(hwnd, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-					[hwnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+					[this, hwnd, url, hidden, clearCookies, result = std::move(result)](HRESULT r, ICoreWebView2Controller* controller) mutable -> HRESULT {
 						if (controller != nullptr) {
 							webviewController = controller;
 							webviewController->get_CoreWebView2(&webviewWindow);
@@ -112,6 +147,21 @@ void WebviewPopupauthPlugin::HandleMethodCall(
 						Settings->put_IsScriptEnabled(TRUE);
 						Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
 						Settings->put_IsWebMessageEnabled(TRUE);
+						
+						webviewWindow->add_SourceChanged(
+							Callback<ICoreWebView2SourceChangedEventHandler>(
+								[this](ICoreWebView2* sender,
+									IUnknown* args) -> HRESULT
+								{
+									LPWSTR newUri{ nullptr };
+									webviewWindow->get_Source(&newUri);
+
+									std::string newUriString = CW2A(newUri);
+
+									OnUrlChanged(newUriString);
+
+									return S_OK;
+								}).Get(), &sourceChangedToken);
 
 						// Resize WebView to fit the bounds of the parent window
 						RECT bounds;
@@ -122,30 +172,23 @@ void WebviewPopupauthPlugin::HandleMethodCall(
 						bounds.bottom -= 50;
 						webviewController->put_Bounds(bounds);
 
-						// Schedule an async task to navigate to Bing
-						webviewWindow->Navigate(L"https://www.bing.com/");
+						webviewController->put_IsVisible(!hidden);
+
+						if (clearCookies) {
+							webviewWindow->CallDevToolsProtocolMethod(L"Network.clearBrowserCookies", L"{}", nullptr);
+						}
+
+						std::wstring wstr(url.begin(), url.end());
+						webviewWindow->Navigate(wstr.c_str());
+
+						result->Success(nullptr);
 
 						return S_OK;
 					}).Get());
 				return S_OK;
 			}).Get());
 
-	MSG msg;
-	while (GetMessage(&msg, NULL, 0, 0))
-	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
-
-    //EncodableValue response("FAKEHASH");
-
-    //result->Success(&response);
-  } else {
-    result->NotImplemented();
-  }
 }
-
-}  // namespace
 
 void WebviewPopupAuthRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar) {
