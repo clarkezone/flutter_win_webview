@@ -85,11 +85,11 @@ void WebviewPopupauthPlugin::HandleMethodCall(
 
   OutputDebugStringA(method_call.method_name().c_str());
   if (method_call.method_name().compare("launch") == 0) {
-    if (!method_call.arguments() || !method_call.arguments()->IsString()) {
+    if (!method_call.arguments() || !method_call.arguments()->IsMap() || method_call.arguments()->MapValue().empty()) {
       result->Error("Bad Arguments", "Argument map missing or malformed");
       return;
     }
-	auto url = method_call.arguments()->StringValue();
+	auto url = method_call.arguments()->MapValue().at(flutter::EncodableValue("url")).StringValue();
 	//std::wstring wstr(url.begin(), url.end());
     OutputDebugStringA(url.c_str());
 
